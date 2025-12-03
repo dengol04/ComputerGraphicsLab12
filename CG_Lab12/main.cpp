@@ -16,20 +16,14 @@
 
 const float PI = 3.14159265359f;
 
-class Matrix4
-{
+class Matrix4 {
 public:
     float m[16];
-
     Matrix4() {
         std::memset(m, 0, sizeof(m));
         m[0] = m[5] = m[10] = m[15] = 1.0f;
     }
-
-    static Matrix4 Identity() {
-        return Matrix4();
-    }
-
+    static Matrix4 Identity() { return Matrix4(); }
     Matrix4 operator*(const Matrix4& o) const {
         Matrix4 r;
         for (int col = 0; col < 4; ++col)
@@ -41,54 +35,34 @@ public:
             }
         return r;
     }
-
     static Matrix4 Rotate(const Matrix4& mat, float angle, float x, float y, float z) {
         float rad = angle * PI / 180.0f;
         float c = cosf(rad);
         float s = sinf(rad);
-
         float len = sqrtf(x * x + y * y + z * z);
         if (len < 1e-6f) return mat;
-
         x /= len; y /= len; z /= len;
-
         Matrix4 r;
-        r.m[0] = x * x * (1 - c) + c;
-        r.m[1] = y * x * (1 - c) + z * s;
-        r.m[2] = z * x * (1 - c) - y * s;
-
-        r.m[4] = x * y * (1 - c) - z * s;
-        r.m[5] = y * y * (1 - c) + c;
-        r.m[6] = z * y * (1 - c) + x * s;
-
-        r.m[8] = x * z * (1 - c) + y * s;
-        r.m[9] = y * z * (1 - c) - x * s;
-        r.m[10] = z * z * (1 - c) + c;
-
+        r.m[0] = x * x * (1 - c) + c;     r.m[1] = y * x * (1 - c) + z * s; r.m[2] = z * x * (1 - c) - y * s;
+        r.m[4] = x * y * (1 - c) - z * s; r.m[5] = y * y * (1 - c) + c;     r.m[6] = z * y * (1 - c) + x * s;
+        r.m[8] = x * z * (1 - c) + y * s; r.m[9] = y * z * (1 - c) - x * s; r.m[10] = z * z * (1 - c) + c;
         return mat * r;
     }
-
     static Matrix4 Perspective(float fov, float aspect, float zNear, float zFar) {
         Matrix4 r;
         float tanHalf = tanf(fov * PI / 360.0f);
         float range = zNear - zFar;
-
         r.m[0] = 1.0f / (aspect * tanHalf);
         r.m[5] = 1.0f / tanHalf;
         r.m[10] = (zFar + zNear) / range;
         r.m[11] = -1.0f;
         r.m[14] = (2.0f * zFar * zNear) / range;
         r.m[15] = 0.0f;
-
         return r;
-    }
-
-    static Matrix4 LookAt(float eyeX, float eyeY, float eyeZ, float centerX, float centerY, float centerZ, float upX, float upY, float upZ) {
-        return Matrix4::Identity();
     }
 };
 
-const char* vertexShaderSource =
+const char* colorVertexSource =
 "#version 330 core\n"
 "layout (location = 0) in vec3 aPos;\n"
 "layout (location = 1) in vec3 aColor;\n"
@@ -102,7 +76,7 @@ const char* vertexShaderSource =
 "    ourColor = aColor;\n"
 "}\n";
 
-const char* fragmentShaderSource =
+const char* colorFragmentSource =
 "#version 330 core\n"
 "out vec4 FragColor;\n"
 "in vec3 ourColor;\n"
@@ -111,192 +85,306 @@ const char* fragmentShaderSource =
 "    FragColor = vec4(ourColor, 1.0f);\n"
 "}\n";
 
-class Shader
-{
+const char* cubeVertexSource =
+"#version 330 core\n"
+"layout (location = 0) in vec3 aPos;\n"
+"layout (location = 1) in vec2 aTexCoord;\n"
+"out vec2 TexCoord;\n"
+"out vec3 LocalPos;\n"
+"uniform mat4 model;\n"
+"uniform mat4 view;\n"
+"uniform mat4 projection;\n"
+"void main()\n"
+"{\n"
+"    gl_Position = projection * view * model * vec4(aPos, 1.0);\n"
+"    TexCoord = aTexCoord;\n"
+"    LocalPos = aPos;\n"
+"}\n";
+
+const char* cubeFragmentSource =
+"#version 330 core\n"
+"out vec4 FragColor;\n"
+"in vec2 TexCoord;\n"
+"in vec3 LocalPos;\n"
+"uniform sampler2D imageTexture;\n"
+"uniform float mixVal;\n"
+"uniform vec3 colorVal;\n"
+"uniform int mode;\n"
+"void main()\n"
+"{\n"
+"    vec4 gradientColor = vec4(LocalPos + 0.5, 1.0);\n"
+"    if (mode == 3) {\n"
+"        vec4 imgColor = texture(imageTexture, TexCoord);\n"
+"        FragColor = mix(gradientColor, imgColor, mixVal);\n"
+"    } else {\n"
+"        FragColor = gradientColor * vec4(colorVal, 1.0);\n"
+"    }\n"
+"}\n";
+
+const char* circleVertexSource =
+"#version 330 core\n"
+"layout (location = 0) in vec2 aPos;\n"
+"out vec2 vPos;\n"
+"uniform vec2 scaleVal;\n"
+"void main()\n"
+"{\n"
+"    vPos = aPos;\n"
+"    vec2 p = aPos * scaleVal;\n"
+"    gl_Position = vec4(p, 0.0, 1.0);\n"
+"}\n";
+
+const char* circleFragmentSource =
+"#version 330 core\n"
+"in vec2 vPos;\n"
+"out vec4 FragColor;\n"
+"void main()\n"
+"{\n"
+"    float r = length(vPos);\n"
+"    if (r > 1.0) discard;\n"
+"    float ang = atan(vPos.y, vPos.x);\n"
+"    ang = ang / 3.14159265 * 0.5 + 0.5;\n"
+"    vec3 rgb = vec3(abs(ang*6-3)-1, 2-abs(ang*6-2), 2-abs(ang*6-4));\n"
+"    rgb = clamp(rgb, 0.0, 1.0);\n"
+"    vec3 col = mix(vec3(1.0), rgb, r);\n"
+"    FragColor = vec4(col, 1.0);\n"
+"}\n";
+
+class Shader {
 public:
     unsigned int ID;
+    Shader(const char* vCode, const char* fCode) {
+        unsigned int v, f;
+        int success; char log[512];
+        v = glCreateShader(GL_VERTEX_SHADER); glShaderSource(v, 1, &vCode, NULL); glCompileShader(v);
+        glGetShaderiv(v, GL_COMPILE_STATUS, &success);
+        if (!success) { glGetShaderInfoLog(v, 512, NULL, log); std::cout << "VERT ERR: " << log << std::endl; }
 
-    Shader(const char* vShaderCode, const char* fShaderCode)
-    {
-        unsigned int vertex, fragment;
-        int success;
-        char infoLog[512];
+        f = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(f, 1, &fCode, NULL); glCompileShader(f);
+        glGetShaderiv(f, GL_COMPILE_STATUS, &success);
+        if (!success) { glGetShaderInfoLog(f, 512, NULL, log); std::cout << "FRAG ERR: " << log << std::endl; }
 
-        vertex = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertex, 1, &vShaderCode, NULL);
-        glCompileShader(vertex);
-        glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
-        if (!success) { glGetShaderInfoLog(vertex, 512, NULL, infoLog); std::cout << "ERROR::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl; }
-
-        fragment = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragment, 1, &fShaderCode, NULL);
-        glCompileShader(fragment);
-        glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
-        if (!success) { glGetShaderInfoLog(fragment, 512, NULL, infoLog); std::cout << "ERROR::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl; }
-
-        ID = glCreateProgram();
-        glAttachShader(ID, vertex);
-        glAttachShader(ID, fragment);
-
-        glBindAttribLocation(ID, 0, "aPos");
-        glBindAttribLocation(ID, 1, "aColor");
-
-        glLinkProgram(ID);
+        ID = glCreateProgram(); glAttachShader(ID, v); glAttachShader(ID, f); glLinkProgram(ID);
         glGetProgramiv(ID, GL_LINK_STATUS, &success);
-        if (!success) { glGetProgramInfoLog(ID, 512, NULL, infoLog); std::cout << "ERROR::SHADER::LINKING_FAILED\n" << infoLog << std::endl; }
-
-        glDeleteShader(vertex);
-        glDeleteShader(fragment);
+        if (!success) { glGetProgramInfoLog(ID, 512, NULL, log); std::cout << "LINK ERR: " << log << std::endl; }
+        glDeleteShader(v); glDeleteShader(f);
     }
-
     void use() { glUseProgram(ID); }
     void setMat4(const std::string& name, const Matrix4& mat) const { glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, mat.m); }
     void setVec3(const std::string& name, float x, float y, float z) const { glUniform3f(glGetUniformLocation(ID, name.c_str()), x, y, z); }
+    void setFloat(const std::string& name, float value) const { glUniform1f(glGetUniformLocation(ID, name.c_str()), value); }
+    void setInt(const std::string& name, int value) const { glUniform1i(glGetUniformLocation(ID, name.c_str()), value); }
 };
 
-void initOpenGL(int width, int height);
-void processInput(sf::RenderWindow& window, float& offsetX, float& offsetY, float& offsetZ, float dt);
+unsigned int loadTexture(const char* filename) {
+    unsigned int tID;
+    glGenTextures(1, &tID);
+    glBindTexture(GL_TEXTURE_2D, tID);
 
-int main()
+    sf::Image img;
+    if (img.loadFromFile(filename)) {
+        img.flipVertically();
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.getSize().x, img.getSize().y, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.getPixelsPtr());
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    else {
+        std::cerr << "Ошибка, изображения нету" << std::endl;
+    }
+    return tID;
+}
+
+void setupTetra(unsigned int& VAO, unsigned int& count) {
+    const float SQRT_3 = 1.73205f; const float SQRT_6 = 2.44949f;
+    float v[] = {
+        0.0f, 0.0f, 1.0f, 1,0,0,  0.0f, 2.0f * SQRT_6 / 3.0f, -1.0f / 3.0f, 0,1,0,
+        SQRT_3, -1.0f * SQRT_6 / 3.0f, -1.0f / 3.0f, 0,0,1, -SQRT_3, -1.0f * SQRT_6 / 3.0f, -1.0f / 3.0f, 1,1,0
+    };
+    unsigned int idx[] = { 0,1,2, 0,2,3, 0,3,1, 1,3,2 };
+    count = 12;
+    unsigned int VBO, EBO;
+    glGenVertexArrays(1, &VAO); glGenBuffers(1, &VBO); glGenBuffers(1, &EBO);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO); glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO); glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+}
+
+void setupCube(unsigned int& VAO) {
+    float v[] = {
+        -0.5f, -0.5f, -0.5f, 0,0,  0.5f, -0.5f, -0.5f, 1,0,  0.5f,  0.5f, -0.5f, 1,1,
+         0.5f,  0.5f, -0.5f, 1,1, -0.5f,  0.5f, -0.5f, 0,1, -0.5f, -0.5f, -0.5f, 0,0,
+         -0.5f, -0.5f,  0.5f, 0,0,  0.5f, -0.5f,  0.5f, 1,0,  0.5f,  0.5f,  0.5f, 1,1,
+          0.5f,  0.5f,  0.5f, 1,1, -0.5f,  0.5f,  0.5f, 0,1, -0.5f, -0.5f,  0.5f, 0,0,
+          -0.5f,  0.5f,  0.5f, 1,0, -0.5f,  0.5f, -0.5f, 1,1, -0.5f, -0.5f, -0.5f, 0,1,
+          -0.5f, -0.5f, -0.5f, 0,1, -0.5f, -0.5f,  0.5f, 0,0, -0.5f,  0.5f,  0.5f, 1,0,
+           0.5f,  0.5f,  0.5f, 1,0,  0.5f,  0.5f, -0.5f, 1,1,  0.5f, -0.5f, -0.5f, 0,1,
+           0.5f, -0.5f, -0.5f, 0,1,  0.5f, -0.5f,  0.5f, 0,0,  0.5f,  0.5f,  0.5f, 1,0,
+           -0.5f, -0.5f, -0.5f, 0,1,  0.5f, -0.5f, -0.5f, 1,1,  0.5f, -0.5f,  0.5f, 1,0,
+            0.5f, -0.5f,  0.5f, 1,0, -0.5f, -0.5f,  0.5f, 0,0, -0.5f, -0.5f, -0.5f, 0,1,
+            -0.5f,  0.5f, -0.5f, 0,1,  0.5f,  0.5f, -0.5f, 1,1,  0.5f,  0.5f,  0.5f, 1,0,
+             0.5f,  0.5f,  0.5f, 1,0, -0.5f,  0.5f,  0.5f, 0,0, -0.5f,  0.5f, -0.5f, 0,1
+    };
+    unsigned int VBO;
+    glGenVertexArrays(1, &VAO); glGenBuffers(1, &VBO);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO); glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0); glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float))); glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
+}
+
+void setupCircle(unsigned int& VAO, int& vCount)
 {
-    const unsigned int SCR_WIDTH = 800;
-    const unsigned int SCR_HEIGHT = 600;
+    const int N = 200;
+    vCount = N + 2;
+    float* verts = new float[vCount * 2];
 
-    sf::ContextSettings settings;
-    settings.depthBits = 24;
-    settings.majorVersion = 3;
-    settings.minorVersion = 3;
-    settings.attributeFlags = sf::ContextSettings::Core;
+    verts[0] = 0.f;
+    verts[1] = 0.f;
 
-    sf::RenderWindow window(sf::VideoMode(SCR_WIDTH, SCR_HEIGHT, 32),
-        "Gradient Tetrahedron",
-        sf::Style::Default,
-        settings);
-
-    window.setFramerateLimit(60);
-    window.setActive(true);
-
-    glewExperimental = GL_TRUE;
-    GLenum err = glewInit();
-    if (GLEW_OK != err)
-    {
-        std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(err) << std::endl;
-        return -1;
+    for (int i = 0; i <= N; i++) {
+        float a = (float)i / N * 2.f * PI;
+        verts[(i + 1) * 2 + 0] = cosf(a);
+        verts[(i + 1) * 2 + 1] = sinf(a);
     }
 
-    initOpenGL(SCR_WIDTH, SCR_HEIGHT);
-
-    Shader ourShader(vertexShaderSource, fragmentShaderSource);
-
-    const float SQRT_3 = 1.73205f;
-    const float SQRT_6 = 2.44949f;
-
-    float vertices[] = {
-        0.0f,  0.0f,  1.0f,                 1.0f, 0.0f, 0.0f,
-        0.0f,  2.0f * SQRT_6 / 3.0f, -1.0f / 3.0f, 0.0f, 1.0f, 0.0f,
-        SQRT_3, -1.0f * SQRT_6 / 3.0f, -1.0f / 3.0f, 0.0f, 0.0f, 1.0f,
-        -SQRT_3, -1.0f * SQRT_6 / 3.0f, -1.0f / 3.0f, 1.0f, 1.0f, 0.0f
-    };
-
-    unsigned int indices[] = {
-        0, 1, 2, 0, 2, 3, 0, 3, 1, 1, 3, 2
-    };
-
-    unsigned int VBO, VAO, EBO;
+    unsigned int VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
 
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glBufferData(GL_ARRAY_BUFFER, vCount * 2 * sizeof(float), verts, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
 
     glBindVertexArray(0);
+    delete[] verts;
+}
 
-    float offsetX = 0.0f;
-    float offsetY = 0.0f;
-    float offsetZ = -10.0f;
+int main() {
+    sf::ContextSettings s; s.depthBits = 24; s.majorVersion = 3; s.minorVersion = 3;
+    sf::RenderWindow win(sf::VideoMode(800, 600), "OpenGL Final", sf::Style::Default, s);
+    win.setFramerateLimit(60); win.setActive(true);
+    glewExperimental = GL_TRUE; glewInit(); glEnable(GL_DEPTH_TEST);
 
-    sf::Clock clock;
-    sf::Clock rotationClock;
+    Shader tetraShader(colorVertexSource, colorFragmentSource);
+    Shader cubeShader(cubeVertexSource, cubeFragmentSource);
 
-    while (window.isOpen())
-    {
-        float dt = clock.restart().asSeconds();
-        processInput(window, offsetX, offsetY, offsetZ, dt);
+    Shader circleShader(circleVertexSource, circleFragmentSource);
+
+    unsigned int tetraVAO, tetraCount, cubeVAO;
+    setupTetra(tetraVAO, tetraCount);
+    setupCube(cubeVAO);
+
+    unsigned int texID = loadTexture("image.png");
+
+    cubeShader.use();
+    cubeShader.setInt("imageTexture", 0);
+
+    unsigned int circleVAO;
+    int circleCount;
+    setupCircle(circleVAO, circleCount);
+
+    float sx = 1.0f, sy = 1.0f;
+
+    int task = 1;
+    float tx = 0, ty = 0, tz = -5;
+    float cr = 1, cg = 1, cb = 1;
+    float mixVal = 0.5f;
+
+    sf::Clock cl, rotCl;
+
+    while (win.isOpen()) {
+        float dt = cl.restart().asSeconds();
+        sf::Event e;
+        while (win.pollEvent(e)) {
+            if (e.type == sf::Event::Closed) win.close();
+            if (e.type == sf::Event::Resized) glViewport(0, 0, e.size.width, e.size.height);
+
+            if (e.type == sf::Event::KeyPressed) {
+                if (e.key.code == sf::Keyboard::Num1) task = 1;
+                if (e.key.code == sf::Keyboard::Num2) task = 2;
+                if (e.key.code == sf::Keyboard::Num3) task = 3;
+                if (e.key.code == sf::Keyboard::Num4) task = 4;
+
+                if (task == 2) {
+                    if (e.key.code == sf::Keyboard::R) cr += 0.1f; if (e.key.code == sf::Keyboard::F) cr -= 0.1f;
+                    if (e.key.code == sf::Keyboard::G) cg += 0.1f; if (e.key.code == sf::Keyboard::H) cg -= 0.1f;
+                    if (e.key.code == sf::Keyboard::B) cb += 0.1f; if (e.key.code == sf::Keyboard::N) cb -= 0.1f;
+                }
+                if (task == 3) {
+                    if (e.key.code == sf::Keyboard::Up) mixVal += 0.1f;
+                    if (e.key.code == sf::Keyboard::Down) mixVal -= 0.1f;
+                }
+
+                if (cr < 0) cr = 0; if (cr > 1) cr = 1; if (cg < 0) cg = 0; if (cg > 1) cg = 1; if (cb < 0) cb = 0; if (cb > 1) cb = 1;
+                if (e.key.code == sf::Keyboard::Z) sx += 0.1f;
+                if (e.key.code == sf::Keyboard::X) sx -= 0.1f;
+                if (e.key.code == sf::Keyboard::C) sy += 0.1f;
+                if (e.key.code == sf::Keyboard::V) sy -= 0.1f;
+
+                if (mixVal < 0) mixVal = 0; if (mixVal > 1) mixVal = 1;
+            }
+        }
+
+        if (task == 1) {
+            float sp = 3.0f * dt;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) ty += sp;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) ty -= sp;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) tx -= sp;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) tx += sp;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) tz += sp;
+            if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) tz -= sp;
+        }
 
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        ourShader.use();
-
-        Matrix4 projection = Matrix4::Perspective(45.0f, (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-
+        Matrix4 proj = Matrix4::Perspective(45.0f, 800.0f / 600.0f, 0.1f, 100.0f);
         Matrix4 view = Matrix4::Identity();
+        float ang = rotCl.getElapsedTime().asSeconds() * 30.0f;
 
-        Matrix4 model = Matrix4::Identity();
+        if (task == 1) {
+            tetraShader.use();
+            Matrix4 m = Matrix4::Identity();
+            Matrix4 tr = Matrix4::Identity(); tr.m[12] = tx; tr.m[13] = ty; tr.m[14] = tz;
+            m = tr * m;
+            m = Matrix4::Rotate(m, 30.0f, 1, 0, 0);
+            m = Matrix4::Rotate(m, ang, 0, 1, 0);
+            tetraShader.setMat4("projection", proj); tetraShader.setMat4("view", view); tetraShader.setMat4("model", m);
+            glBindVertexArray(tetraVAO); glDrawElements(GL_TRIANGLES, tetraCount, GL_UNSIGNED_INT, 0);
+        }
 
-        Matrix4 translationMatrix = Matrix4::Identity();
-        translationMatrix.m[12] = offsetX;
-        translationMatrix.m[13] = offsetY;
-        translationMatrix.m[14] = offsetZ;
+        else if (task == 2 || task == 3) {
+            cubeShader.use();
+            Matrix4 m = Matrix4::Identity();
+            Matrix4 tr = Matrix4::Identity(); tr.m[14] = -4.0f;
+            m = tr * m;
+            m = Matrix4::Rotate(m, ang, 0.5f, 1.0f, 0.0f);
+            cubeShader.setMat4("projection", proj); cubeShader.setMat4("view", view); cubeShader.setMat4("model", m);
 
-        model = translationMatrix * model;
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texID);
 
-        model = Matrix4::Rotate(model, 30.0f, 1.0f, 0.0f, 0.0f);
+            cubeShader.setInt("mode", task);
+            cubeShader.setVec3("colorVal", cr, cg, cb);
+            cubeShader.setFloat("mixVal", mixVal);
 
-        float rotationSpeed = 20.0f;
-        float angle = rotationClock.getElapsedTime().asSeconds() * rotationSpeed;
-        model = Matrix4::Rotate(model, angle, 0.0f, 1.0f, 0.0f);
+            glBindVertexArray(cubeVAO); glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+        else if (task == 4) {
+            circleShader.use();
+            glUniform2f(glGetUniformLocation(circleShader.ID, "scaleVal"), sx, sy);
+            glBindVertexArray(circleVAO);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, circleCount);
+        }
 
-        ourShader.setMat4("projection", projection);
-        ourShader.setMat4("view", view);
-        ourShader.setMat4("model", model);
-
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, 0);
-
-        window.display();
+        win.display();
     }
-
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteBuffers(1, &EBO);
-
     return 0;
-}
-
-void initOpenGL(int width, int height)
-{
-    glViewport(0, 0, width, height);
-    glEnable(GL_DEPTH_TEST);
-}
-
-void processInput(sf::RenderWindow& window, float& offsetX, float& offsetY, float& offsetZ, float dt)
-{
-    sf::Event event;
-    while (window.pollEvent(event))
-    {
-        if (event.type == sf::Event::Closed)
-            window.close();
-        if (event.type == sf::Event::Resized)
-            glViewport(0, 0, event.size.width, event.size.height);
-    }
-
-    const float moveSpeed = 3.0f * dt;
-
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) offsetY += moveSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) offsetY -= moveSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) offsetX -= moveSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) offsetX += moveSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) offsetZ += moveSpeed;
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) offsetZ -= moveSpeed;
 }
