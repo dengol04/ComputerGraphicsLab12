@@ -109,17 +109,44 @@ const char* cubeFragmentSource =
 "uniform sampler2D imageTexture;\n"
 "uniform float mixVal;\n"
 "uniform vec3 colorVal;\n"
-"uniform int mode;\n" 
+"uniform int mode;\n"
 "void main()\n"
 "{\n"
 "    vec4 gradientColor = vec4(LocalPos + 0.5, 1.0);\n"
-"    \n"
 "    if (mode == 3) {\n"
 "        vec4 imgColor = texture(imageTexture, TexCoord);\n"
 "        FragColor = mix(gradientColor, imgColor, mixVal);\n"
 "    } else {\n"
 "        FragColor = gradientColor * vec4(colorVal, 1.0);\n"
 "    }\n"
+"}\n";
+
+const char* circleVertexSource =
+"#version 330 core\n"
+"layout (location = 0) in vec2 aPos;\n"
+"out vec2 vPos;\n"
+"uniform vec2 scaleVal;\n"
+"void main()\n"
+"{\n"
+"    vPos = aPos;\n"
+"    vec2 p = aPos * scaleVal;\n"
+"    gl_Position = vec4(p, 0.0, 1.0);\n"
+"}\n";
+
+const char* circleFragmentSource =
+"#version 330 core\n"
+"in vec2 vPos;\n"
+"out vec4 FragColor;\n"
+"void main()\n"
+"{\n"
+"    float r = length(vPos);\n"
+"    if (r > 1.0) discard;\n"
+"    float ang = atan(vPos.y, vPos.x);\n"
+"    ang = ang / 3.14159265 * 0.5 + 0.5;\n"
+"    vec3 rgb = vec3(abs(ang*6-3)-1, 2-abs(ang*6-2), 2-abs(ang*6-4));\n"
+"    rgb = clamp(rgb, 0.0, 1.0);\n"
+"    vec3 col = mix(vec3(1.0), rgb, r);\n"
+"    FragColor = vec4(col, 1.0);\n"
 "}\n";
 
 class Shader {
@@ -156,7 +183,7 @@ unsigned int loadTexture(const char* filename) {
     sf::Image img;
     if (img.loadFromFile(filename)) {
         img.flipVertically();
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4); 
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.getSize().x, img.getSize().y, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.getPixelsPtr());
         glGenerateMipmap(GL_TEXTURE_2D);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -210,6 +237,35 @@ void setupCube(unsigned int& VAO) {
     glBindVertexArray(0);
 }
 
+void setupCircle(unsigned int& VAO, int& vCount)
+{
+    const int N = 200;
+    vCount = N + 2;
+    float* verts = new float[vCount * 2];
+
+    verts[0] = 0.f;
+    verts[1] = 0.f;
+
+    for (int i = 0; i <= N; i++) {
+        float a = (float)i / N * 2.f * PI;
+        verts[(i + 1) * 2 + 0] = cosf(a);
+        verts[(i + 1) * 2 + 1] = sinf(a);
+    }
+
+    unsigned int VBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vCount * 2 * sizeof(float), verts, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+    delete[] verts;
+}
+
 int main() {
     sf::ContextSettings s; s.depthBits = 24; s.majorVersion = 3; s.minorVersion = 3;
     sf::RenderWindow win(sf::VideoMode(800, 600), "OpenGL Final", sf::Style::Default, s);
@@ -219,6 +275,8 @@ int main() {
     Shader tetraShader(colorVertexSource, colorFragmentSource);
     Shader cubeShader(cubeVertexSource, cubeFragmentSource);
 
+    Shader circleShader(circleVertexSource, circleFragmentSource);
+
     unsigned int tetraVAO, tetraCount, cubeVAO;
     setupTetra(tetraVAO, tetraCount);
     setupCube(cubeVAO);
@@ -227,6 +285,12 @@ int main() {
 
     cubeShader.use();
     cubeShader.setInt("imageTexture", 0);
+
+    unsigned int circleVAO;
+    int circleCount;
+    setupCircle(circleVAO, circleCount);
+
+    float sx = 1.0f, sy = 1.0f;
 
     int task = 1;
     float tx = 0, ty = 0, tz = -5;
@@ -241,10 +305,12 @@ int main() {
         while (win.pollEvent(e)) {
             if (e.type == sf::Event::Closed) win.close();
             if (e.type == sf::Event::Resized) glViewport(0, 0, e.size.width, e.size.height);
+
             if (e.type == sf::Event::KeyPressed) {
                 if (e.key.code == sf::Keyboard::Num1) task = 1;
                 if (e.key.code == sf::Keyboard::Num2) task = 2;
                 if (e.key.code == sf::Keyboard::Num3) task = 3;
+                if (e.key.code == sf::Keyboard::Num4) task = 4;
 
                 if (task == 2) {
                     if (e.key.code == sf::Keyboard::R) cr += 0.1f; if (e.key.code == sf::Keyboard::F) cr -= 0.1f;
@@ -257,6 +323,11 @@ int main() {
                 }
 
                 if (cr < 0) cr = 0; if (cr > 1) cr = 1; if (cg < 0) cg = 0; if (cg > 1) cg = 1; if (cb < 0) cb = 0; if (cb > 1) cb = 1;
+                if (e.key.code == sf::Keyboard::Z) sx += 0.1f;
+                if (e.key.code == sf::Keyboard::X) sx -= 0.1f;
+                if (e.key.code == sf::Keyboard::C) sy += 0.1f;
+                if (e.key.code == sf::Keyboard::V) sy -= 0.1f;
+
                 if (mixVal < 0) mixVal = 0; if (mixVal > 1) mixVal = 1;
             }
         }
@@ -288,7 +359,8 @@ int main() {
             tetraShader.setMat4("projection", proj); tetraShader.setMat4("view", view); tetraShader.setMat4("model", m);
             glBindVertexArray(tetraVAO); glDrawElements(GL_TRIANGLES, tetraCount, GL_UNSIGNED_INT, 0);
         }
-        else {
+
+        else if (task == 2 || task == 3) {
             cubeShader.use();
             Matrix4 m = Matrix4::Identity();
             Matrix4 tr = Matrix4::Identity(); tr.m[14] = -4.0f;
@@ -305,6 +377,13 @@ int main() {
 
             glBindVertexArray(cubeVAO); glDrawArrays(GL_TRIANGLES, 0, 36);
         }
+        else if (task == 4) {
+            circleShader.use();
+            glUniform2f(glGetUniformLocation(circleShader.ID, "scaleVal"), sx, sy);
+            glBindVertexArray(circleVAO);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, circleCount);
+        }
+
         win.display();
     }
     return 0;
